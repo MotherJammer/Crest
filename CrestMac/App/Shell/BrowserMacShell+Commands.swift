@@ -56,7 +56,7 @@ extension BrowserMacShell {
         // What no Crest command claims can belong to the engine, such as an
         // extension's binding in the active page's Space, which goes ahead of
         // the page as it does in Chrome.
-        guard let page = context?.pages.activePage else { return false }
+        guard let page = context?.pages.commandPage ?? context?.pages.activePage else { return false }
         return engineHost.handleUnclaimedShortcut(event, page: page)
     }
 

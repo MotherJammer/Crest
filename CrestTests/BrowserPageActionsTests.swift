@@ -219,6 +219,93 @@ final class BrowserPageActionsTests: XCTestCase {
         XCTAssertFalse(pool.activePage === secondPage)
     }
 
+    func testCommandPageActsOnActiveQuickWindowWhenInFront() throws {
+        let first = TabState.Seed(
+            title: "First",
+            url: URL(string: "about:blank"),
+            placement: .current
+        )
+        let space = makeSpace(tabs: [first])
+        let pool = BrowserPagePool(
+            browser: .hostingPages(SessionState.Seed(spaces: [space]))
+        )
+        pool.present(tab: first.id, in: space.id)
+        let tabPage = try XCTUnwrap(pool.activePage)
+        XCTAssertTrue(pool.commandPage === tabPage)
+
+        let lease = try XCTUnwrap(
+            pool.makeTransientPageLease(
+                url: try XCTUnwrap(URL(string: "about:blank#quick")),
+                in: try XCTUnwrap(pool.browser.spaceModel(space.id))
+            )
+        )
+        defer { lease.release() }
+        let quickPage = try XCTUnwrap(lease.page)
+
+        var quickInFront = false
+        pool.isQuickWindowInFront = { quickInFront }
+        pool.activeQuickWindowPage = { quickPage }
+
+        XCTAssertTrue(pool.commandPage === tabPage)
+
+        quickInFront = true
+        XCTAssertTrue(pool.commandPage === quickPage)
+        XCTAssertFalse(pool.commandPage === tabPage)
+
+        pool.commandPage?.zoomIn()
+        XCTAssertEqual(quickPage.pageZoom, 1.1)
+        XCTAssertEqual(tabPage.pageZoom, 1.0)
+
+        quickInFront = false
+        XCTAssertTrue(pool.commandPage === tabPage)
+    }
+
+    func testCommandActionsActOnQuickWindowPageWhenInFront() throws {
+        let first = TabState.Seed(
+            title: "Start Page",
+            url: nil,
+            placement: .current
+        )
+        let space = makeSpace(tabs: [first])
+        let browser = BrowserStore.hostingPages(SessionState.Seed(spaces: [space]))
+        let pool = BrowserPagePool(browser: browser)
+        pool.present(tab: first.id, in: space.id)
+
+        let lease = try XCTUnwrap(
+            pool.makeTransientPageLease(
+                url: try XCTUnwrap(URL(string: "about:blank#quick")),
+                in: try XCTUnwrap(pool.browser.spaceModel(space.id))
+            )
+        )
+        defer { lease.release() }
+        let quickPage = try XCTUnwrap(lease.page)
+
+        var quickInFront = true
+        pool.isQuickWindowInFront = { quickInFront }
+        pool.activeQuickWindowPage = { quickPage }
+
+        let chrome = BrowserChromeState(sidebarIsPresented: false)
+        let actions = BrowserCommandActions(
+            browser: browser,
+            pages: pool,
+            chrome: chrome,
+            windows: nil
+        )
+
+        XCTAssertTrue(actions.canPerform(.reloadPage))
+        XCTAssertTrue(actions.canPerform(.reloadFromOrigin))
+        XCTAssertTrue(actions.canPerform(.zoomIn))
+
+        actions.zoomIn()
+        XCTAssertEqual(quickPage.pageZoom, 1.1)
+        actions.resetZoom()
+        XCTAssertEqual(quickPage.pageZoom, 1.0)
+
+        quickInFront = false
+        XCTAssertFalse(actions.canPerform(.reloadPage))
+        XCTAssertFalse(actions.canPerform(.reloadFromOrigin))
+    }
+
     private func makeSpace(tabs: [TabState.Seed]) -> SpaceState.Seed {
         SpaceState.Seed(name: "Test", symbol: "circle", accent: .indigo, tabs: tabs)
     }
